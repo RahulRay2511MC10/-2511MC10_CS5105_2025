@@ -188,7 +188,7 @@ def balanced_split(df: pd.DataFrame, groups: int):
 # =============================
 # 🚀 Streamlit Interface
 # =============================
-st.title("🎓 Student Grouping Tool (Refactored)")
+st.title("🎓 Student Grouping Interface")
 
 file = st.file_uploader("Upload your CSV/Excel file", type=["csv", "xlsx"])
 
