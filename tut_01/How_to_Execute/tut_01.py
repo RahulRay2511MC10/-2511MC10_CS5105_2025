@@ -1,193 +1,239 @@
 import streamlit as st
 import pandas as pd
-import os
 import math
-from io import BytesIO
-
-import streamlit as st
-import webbrowser
-import threading
-
-def open_browser():
-    webbrowser.open_new("http://localhost:8501")
-
-if __name__ == "__main__":
-    st.set_page_config(page_title="Student Grouping Tool")
+from pathlib import Path
 
 
+# File Handling Utilities
 
-# ========== FUNCTIONS ==========
-def BranchWiseFullList(df):
-    df = df.drop(columns=["Unnamed: 3", "Unique"], errors="ignore")
-    df["Branch"] = df["Roll"].astype(str).str[4:6]
+OUTPUT_DIR = Path("output")
+OUTPUT_DIR.mkdir(exist_ok=True)
 
-    os.makedirs("output", exist_ok=True)   # create output folder if not exists
+def save_csv(df: pd.DataFrame, filename: str) -> bytes:
+    """
+    Save a DataFrame both to disk and return a downloadable CSV in memory.
 
-    files = {}
-    for name, group in df.groupby("Branch"):
-        filename = f"Group{name}.csv"
-        filepath = os.path.join("output", filename)
-        group.to_csv(filepath, index=False)   # save to disk
-        files[filename] = group.to_csv(index=False).encode("utf-8")  # also for download
-    return files, None
+    Args:
+        df (pd.DataFrame): The DataFrame to save.
+        filename (str): Desired output file name.
 
-def BranchWiseMix(df, num_groups):
-    df = df.drop(columns=["Unnamed: 3", "Unique"], errors="ignore")
-    df["Dept"] = df["Roll"].astype(str).str[4:6]
+    Returns:
+        bytes: Encoded CSV content for Streamlit download button.
+    """
+    path = OUTPUT_DIR / filename
+    df.to_csv(path, index=False)
+    return df.to_csv(index=False).encode("utf-8")
 
-    os.makedirs("output", exist_ok=True)
 
-    dept_sequence = list(dict.fromkeys(df["Dept"]))
-    dept_frames = {d: df[df["Dept"] == d].reset_index(drop=True) for d in dept_sequence}
 
-    rows_each = math.ceil(len(df) / num_groups)
-    ptr = {d: 0 for d in dept_sequence}
-    grouped = [[] for _ in range(num_groups)]
+#  Grouping Functions
 
-    for gid in range(num_groups):
-        while len(grouped[gid]) < rows_each:
+def export_branchwise(df: pd.DataFrame):
+    """
+    Export students into separate CSV files grouped by branch.
+
+    Args:
+        df (pd.DataFrame): Input dataset containing a 'Roll' column.
+
+    Returns:
+        dict: Mapping of filenames → CSV bytes for download.
+        None: Placeholder since no stats are generated here.
+    """
+    cleaned = df.drop(columns=["Unnamed: 3", "Unique"], errors="ignore")
+    cleaned["branch"] = cleaned["Roll"].astype(str).str[4:6]
+
+
+    results = {}
+    for branch, block in cleaned.groupby("branch"):
+        fname = f"branch_{branch}.csv"
+        results[fname] = save_csv(block, fname)
+    return results, None
+
+
+def distribute_round_robin(df: pd.DataFrame, groups: int):
+    """
+    Interleave students from each department into a fixed number of groups.
+
+    Logic:
+        - Each department list is traversed in order.
+        - Students are assigned in a round-robin fashion.
+        - Groups are filled until desired size is reached.
+
+    Args:
+        df (pd.DataFrame): Input dataset with Roll numbers.
+        groups (int): Number of groups to generate.
+
+    Returns:
+        dict: Generated group CSVs.
+        tuple: (stats filename, stats CSV bytes, stats DataFrame)
+    """
+    base = df.drop(columns=["Unnamed: 3", "Unique"], errors="ignore")
+    base["dept"] = base["Roll"].astype(str).str[4:6]
+
+    # Split into pools by department
+    sequence = list(dict.fromkeys(base["dept"]))
+    pools = {d: base[base["dept"] == d].reset_index(drop=True) for d in sequence}
+    positions = {d: 0 for d in sequence}
+
+    group_size = math.ceil(len(base) / groups)
+    containers = [[] for _ in range(groups)]
+
+    for g in range(groups):
+        while len(containers[g]) < group_size:
             inserted = False
-            for d in dept_sequence:
-                if ptr[d] < len(dept_frames[d]):
-                    grouped[gid].append(dept_frames[d].iloc[ptr[d]].to_dict())
-                    ptr[d] += 1
+            for d in sequence:
+                if positions[d] < len(pools[d]):
+                    containers[g].append(pools[d].iloc[positions[d]].to_dict())
+                    positions[d] += 1
                     inserted = True
-                    if len(grouped[gid]) >= rows_each:
+                    if len(containers[g]) >= group_size:
                         break
             if not inserted:
                 break
 
-    final_groups = [pd.DataFrame(g) for g in grouped if g]
+    # Build DataFrames for each group
+    final = [pd.DataFrame(chunk) for chunk in containers if chunk]
 
     files = {}
-    for i, grp in enumerate(final_groups, start=1):
-        fname = f"group_{i}.csv"
-        fpath = os.path.join("output", fname)
-        grp.to_csv(fpath, index=False)  # save to disk
-        files[fname] = grp.to_csv(index=False).encode("utf-8")
+    for i, gdf in enumerate(final, 1):
+        fname = f"mix_group_{i}.csv"
+        files[fname] = save_csv(gdf, fname)
 
-    # stats
+    # Create department count stats
     summary = []
-    for i, grp in enumerate(final_groups, start=1):
-        counts = grp["Dept"].value_counts().to_dict()
-        counts["Group"] = f"Group {i}"
+    for i, gdf in enumerate(final, 1):
+        counts = gdf["dept"].value_counts().to_dict()
+        counts["Group"] = f"G{i}"
         summary.append(counts)
 
     stats = pd.DataFrame(summary).fillna(0).set_index("Group")
     stats["Total"] = stats.sum(axis=1)
 
-    stats_name = "BranchMixstats.csv"
-    stats_path = os.path.join("output", stats_name)
-    stats.to_csv(stats_path)   # save stats to disk
-    stats_file = stats.to_csv().encode("utf-8")
+    stats_name = "round_robin_stats.csv"
+    stats_bytes = save_csv(stats.reset_index(), stats_name)
+    return files, (stats_name, stats_bytes, stats)
 
-    return files, (stats_name, stats_file, stats)
 
-def UniformMix(df, groups_count):
-    df = df.drop(columns=["Unnamed: 3", "Unique"], errors="ignore")
-    df["Dept"] = df["Roll"].astype(str).str[4:6]
+def balanced_split(df: pd.DataFrame, groups: int):
+    """
+    Distribute students across groups such that sizes are as balanced as possible.
 
-    os.makedirs("output", exist_ok=True)
+    Method:
+        - Sort departments by size.
+        - Allocate slices of each department to groups sequentially.
+        - Ensure remainder distribution keeps groups balanced.
 
-    dept_sizes = df["Dept"].value_counts().to_dict()
-    dept_order = sorted(dept_sizes, key=lambda d: dept_sizes[d], reverse=True)
-    dept_frames = {d: df[df["Dept"] == d].reset_index(drop=True) for d in dept_order}
+    Args:
+        df (pd.DataFrame): Dataset with Roll numbers.
+        groups (int): Number of groups.
 
-    quotient, remainder = divmod(len(df), groups_count)
-    group_sizes = [quotient + (1 if i < remainder else 0) for i in range(groups_count)]
-    final_groups = [[] for _ in range(groups_count)]
-    dept_pos = {d: 0 for d in dept_order}
+    Returns:
+        dict: Generated CSVs for each group.
+        tuple: (stats filename, stats CSV bytes, stats DataFrame)
+    """
+    data = df.drop(columns=["Unnamed: 3", "Unique"], errors="ignore")
+    data["dept"] = data["Roll"].astype(str).str[4:6]
 
-    curr = 0
-    for dept in dept_order:
-        while dept_pos[dept] < len(dept_frames[dept]):
-            room_left = group_sizes[curr] - len(final_groups[curr])
-            remaining = len(dept_frames[dept]) - dept_pos[dept]
-            take_now = min(room_left, remaining)
+    # Organize departments
+    counts = data["dept"].value_counts().to_dict()
+    ordered = sorted(counts, key=counts.get, reverse=True)
+    pools = {d: data[data["dept"] == d].reset_index(drop=True) for d in ordered}
+    pointers = {d: 0 for d in ordered}
 
-            slice_df = dept_frames[dept].iloc[dept_pos[dept]: dept_pos[dept] + take_now]
-            final_groups[curr].extend(slice_df.to_dict(orient="records"))
-            dept_pos[dept] += take_now
+    # Pre-compute group sizes
+    q, r = divmod(len(data), groups)
+    group_sizes = [q + (1 if i < r else 0) for i in range(groups)]
+    groups_data = [[] for _ in range(groups)]
 
-            if len(final_groups[curr]) == group_sizes[curr]:
-                curr += 1
-                if curr == groups_count:
+    idx = 0
+    for dept in ordered:
+        while pointers[dept] < len(pools[dept]):
+            available = group_sizes[idx] - len(groups_data[idx])
+            remain = len(pools[dept]) - pointers[dept]
+            take = min(available, remain)
+
+            slice_df = pools[dept].iloc[pointers[dept]: pointers[dept] + take]
+            groups_data[idx].extend(slice_df.to_dict(orient="records"))
+            pointers[dept] += take
+
+            if len(groups_data[idx]) == group_sizes[idx]:
+                idx += 1
+                if idx == groups:
                     break
-        if curr == groups_count:
+        if idx == groups:
             break
 
-    final_groups = [pd.DataFrame(g) for g in final_groups]
+    final = [pd.DataFrame(chunk) for chunk in groups_data]
 
     files = {}
-    for i, grp in enumerate(final_groups, start=1):
-        fname = f"group_UNI{i}.csv"
-        fpath = os.path.join("output", fname)
-        grp.to_csv(fpath, index=False)   # save to disk
-        files[fname] = grp.to_csv(index=False).encode("utf-8")
+    for i, gdf in enumerate(final, 1):
+        fname = f"balanced_group_{i}.csv"
+        files[fname] = save_csv(gdf, fname)
 
-    dept_sequence = df["Dept"].unique().tolist()
-    stats_table = pd.DataFrame(0, index=[f"Group_{i}" for i in range(1, groups_count + 1)], columns=dept_sequence)
+    # Build stats summary
+    dept_list = data["dept"].unique().tolist()
+    stats_table = pd.DataFrame(0, index=[f"G{i}" for i in range(1, groups + 1)], columns=dept_list)
 
-    for i, grp in enumerate(final_groups, start=1):
-        counts = grp["Dept"].value_counts()
-        stats_table.loc[f"Group_{i}", counts.index] = counts.values
+    for i, gdf in enumerate(final, 1):
+        counts = gdf["dept"].value_counts()
+        stats_table.loc[f"G{i}", counts.index] = counts.values
 
     stats_table["Total"] = stats_table.sum(axis=1)
 
-    stats_name = "statsUNI.csv"
-    stats_path = os.path.join("output", stats_name)
-    stats_table.to_csv(stats_path)   # save stats to disk
-    stats_file = stats_table.to_csv().encode("utf-8")
+    stats_name = "balanced_stats.csv"
+    stats_bytes = save_csv(stats_table.reset_index(), stats_name)
+    return files, (stats_name, stats_bytes, stats_table)
 
-    return files, (stats_name, stats_file, stats_table)
 
-# ========== STREAMLIT APP ==========
-st.title("🎓 Student Grouping Tool")
+# =============================
+# 🚀 Streamlit Interface
+# =============================
+st.title("🎓 Student Grouping Tool (Refactored)")
 
-uploaded_file = st.file_uploader("Upload Excel/CSV file", type=["csv", "xlsx"])
+file = st.file_uploader("Upload your CSV/Excel file", type=["csv", "xlsx"])
 
-if uploaded_file:
-    if uploaded_file.name.endswith("csv"):
-        df = pd.read_csv(uploaded_file)
-    else:
-        df = pd.read_excel(uploaded_file)
-
-    st.subheader("Preview of uploaded file")
+if file:
+    # Load dataset preview
+    df = pd.read_csv(file) if file.name.endswith("csv") else pd.read_excel(file)
+    st.subheader("Preview")
     st.dataframe(df.head())
 
-    choice = st.radio(
-        "Choose grouping method:",
-        ("BranchWiseFullList", "BranchWiseMixList", "UniformMixList")
+    # User choice of grouping method
+    option = st.radio(
+        "Select grouping mode:",
+        ("Branch Export", "Round Robin Mix", "Balanced Split")
     )
 
-    num_groups = None
-    if choice in ["BranchWiseMixList", "UniformMixList"]:
-        num_groups = st.number_input("Enter number of groups:", min_value=1, step=1)
+    groups = None
+    if option in ["Round Robin Mix", "Balanced Split"]:
+        groups = st.number_input("Number of groups", min_value=1, step=1)
 
-    if st.button("Process"):
-        if choice == "BranchWiseFullList":
-            files, stats = BranchWiseFullList(df)
-        elif choice == "BranchWiseMixList":
-            files, stats = BranchWiseMix(df, int(num_groups))
+    if st.button("Generate Groups"):
+        if option == "Branch Export":
+            files, stats = export_branchwise(df)
+        elif option == "Round Robin Mix":
+            files, stats = distribute_round_robin(df, int(groups))
         else:
-            files, stats = UniformMix(df, int(num_groups))
+            files, stats = balanced_split(df, int(groups))
 
-        st.subheader("📥 Download Generated Files")
-        for fname, fdata in files.items():
+        # File download section
+        st.subheader("📥 Download Files")
+        for fname, content in files.items():
             st.download_button(
                 label=f"Download {fname}",
-                data=fdata,
+                data=content,
                 file_name=fname,
                 mime="text/csv"
             )
 
+        # Stats download section
         if stats:
-            stats_name, stats_file, stats_df = stats
-            st.subheader("📊 Statistics")
-            st.dataframe(stats_df)
+            sname, sdata, sdf = stats
+            st.subheader("📊 Group Statistics")
+            st.dataframe(sdf)
             st.download_button(
-                label=f"Download {stats_name}",
-                data=stats_file,
-                file_name=stats_name,
+                label=f"Download {sname}",
+                data=sdata,
+                file_name=sname,
                 mime="text/csv"
             )
