@@ -1,0 +1,11 @@
+version: '3.9'
+services:
+  btp_allocation_app:
+    build: .
+    container_name: btp_allocation_app
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    restart: always

@@ -1,0 +1,40 @@
+% LaTeX source (IEEEtran conference style) to reproduce the uploaded PDF
+\documentclass[conference]{IEEEtran}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{cite}
+\usepackage{url}
+\usepackage{multirow}
+\usepackage{caption}
+\captionsetup{font=footnotesize}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{} % clear existing header/footer
+\fancyfoot[C]{\footnotesize Authorized licensed use limited to: Indian Institute of Technology Patna. Downloaded on September 02,2025 at 08:05:17 UTC from IEEE Xplore. Restrictions apply.}
+\fancyfoot[R]{\thepage}
+\IEEEoverridecommandlockouts
+
+\title{Parallel Operation of Battery Chargers in Small Satellite Electrical Power Systems}
+
+\author{\IEEEauthorblockN{Mallikarjun Kompella, R. Sudharshan Kaarthik, H. Priyadarshnam, and Harsha Simha M.S.}
+\IEEEauthorblockA{Department of Avionics, Indian Institute of Space Science and Technology, Thiruvananthapuram, India. \\
+vlnmallikarjunkompella@gmail.com}
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+CubeSats are a class of nano-satellites primarily built using commercial off-the-shelf components for electronics and structure, aimed at space and atmospheric research. The Electrical Power System (EPS) of the CubeSat is responsible for extracting power from solar panels to provide regulated power to all the satellite subsystems and using the surplus power to charge the satellite's batteries in order to sustain the satellite's operations during eclipses. The battery charger integrated circuit, with the photovoltaic (PV) input, should be able to charge the batteries of the satellite while extracting maximum power from the solar panels. Since there are multiple solar panels for a given satellite, the chosen charging scheme should be able to operate in parallel from different PV inputs and common battery output terminals. This manuscript describes parallel operation of a PV battery charger, which is capable of interfacing PV panels of different incident solar radiation with a common battery. Experimental results are presented to validate the circuit operation.
+\end{abstract}
+
+
+\begin{IEEEkeywords}
+Small satellite, parallel converters, maximum power point, battery charging, solar panel, load sharing.
+\end{IEEEkeywords}
+
+\section{Introduction}
+A CubeSat is a type of miniaturized satellite for space research made up of multiple units of $10\,\text{cm} \times 10\,\text{cm} \times 11.35\,\text{cm}$ with a maximum mass of $1.33\,\text{kg}$. The primary objective of CubeSats is to provide access to space for small payloads from universities across the globe~\cite{hutputtanasin2005}. CubeSats now provide a cost effective platform for scientific investigations, new technology demonstrations and advanced mission concepts~\cite{mabrouk2017}.
+
+\end{document}
